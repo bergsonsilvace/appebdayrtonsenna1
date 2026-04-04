@@ -723,10 +723,10 @@ input,select,textarea{font-family:'Outfit',sans-serif}
           <div class="meta-track"><div class="meta-fill" id="meta-fill" style="width:0%"></div></div>
         </div>
       </div>
-      <div id="dash-countdown"></div>
       <div id="dash-provas-notif"></div>
       <div id="dash-mural"></div>
       <div id="dash-aniversariantes"></div>
+      <div id="dash-countdown"></div>
       <div id="dash-alertas"></div>
       <div class="stats">
         <div class="stat"><div class="stat-n" id="ds-total">—</div><div class="stat-l">Total de alunos</div></div>
@@ -1775,6 +1775,9 @@ async function renderDash() {
   document.getElementById('ds-adu').textContent = alunos.filter(a => a.turma==='adultos'&&(a.status||'ativo')==='ativo').length + ' ativos';
 
   const nomeExib = PERFIL?.nome_exibicao || USER.nome.split(' ')[0];
+  const primeiroNome = nomeExib || USER.nome.split(' ')[0] || 'Olá';
+  const hora = new Date().getHours();
+  const saud = hora < 12 ? 'Bom dia' : hora < 18 ? 'Boa tarde' : 'Boa noite';
   document.getElementById('dash-saudacao').textContent = `${saud}, ${primeiroNome}! ✦`;
   document.getElementById('dash-role-badge').textContent = USER.perfil === 'super' ? '✦ Superintendente' : `Professor — ${TN[USER.turma]||''}`;
 
@@ -2049,21 +2052,29 @@ async function salvarAluno() {
   const dado = {
     nome,
     turma: document.getElementById('ae-turma').value,
-    nasc: document.getElementById('ae-nasc').value||null,
-    tel: document.getElementById('ae-tel').value||null,
+    nasc: document.getElementById('ae-nasc').value || null,
+    tel: document.getElementById('ae-tel').value || null,
     status: document.getElementById('ae-status').value,
-    responsavel: document.getElementById('ae-responsavel')?.value?.trim()||null,
-    tel_responsavel: document.getElementById('ae-tel-resp')?.value?.trim()||null,
-    endereco: document.getElementById('ae-endereco')?.value?.trim()||null,
-    ...(foto_url ? { foto_url } : {}),
-    ...(login ? { login } : {}),
-    ...(senha ? { senha } : {})
+    responsavel: document.getElementById('ae-responsavel')?.value?.trim() || null,
+    tel_responsavel: document.getElementById('ae-tel-resp')?.value?.trim() || null,
+    endereco: document.getElementById('ae-endereco')?.value?.trim() || null,
   };
-  if (editId) await sbUpdate('alunos', editId, dado);
-  else await sbInsert('alunos', dado);
-  cacheAlunos = await sbGet('alunos');
-  fecharModal('mo-aluno'); renderAlunos(); renderDash();
-  toast(editId?'Aluno atualizado!':'Aluno cadastrado!', 'ok');
+  if (foto_url) dado.foto_url = foto_url;
+  if (login) dado.login = login;
+  if (senha) dado.senha = senha;
+  try {
+    let result;
+    if (editId) result = await sbUpdate('alunos', editId, dado);
+    else result = await sbInsert('alunos', dado);
+    if (result === null) return;
+    cacheAlunos = await sbGet('alunos');
+    fecharModal('mo-aluno');
+    renderAlunos();
+    renderDash();
+    toast(editId ? 'Aluno atualizado! ✦' : 'Aluno cadastrado! ✦', 'ok');
+  } catch(e) {
+    toast('Erro ao salvar: ' + e.message, 'er');
+  }
 }
 function editAluno(id) { abrirModalAluno(id); }
 
@@ -2162,21 +2173,39 @@ async function abrirModalProf(id) {
   setTimeout(() => document.getElementById('pe-nome').focus(), 100);
 }
 async function salvarProf() {
-  const nome=document.getElementById('pe-nome').value.trim(); const login=document.getElementById('pe-login').value.trim();
-  const senha=document.getElementById('pe-senha').value; const turma=document.getElementById('pe-turma').value;
-  const nasc=document.getElementById('pe-nasc').value||null; const tel=document.getElementById('pe-tel').value||null;
-  const editId=document.getElementById('pe-id').value;
+  const nome = document.getElementById('pe-nome').value.trim();
+  if (!nome) { toast('Preencha o nome', 'er'); return; }
+  const login = document.getElementById('pe-login').value.trim();
+  const senha = document.getElementById('pe-senha').value;
+  const turma = document.getElementById('pe-turma').value;
+  const nasc = document.getElementById('pe-nasc').value || null;
+  const tel = document.getElementById('pe-tel').value || null;
+  const email = document.getElementById('pe-email')?.value?.trim() || null;
+  const endereco = document.getElementById('pe-endereco')?.value?.trim() || null;
+  const editId = document.getElementById('pe-id').value;
   const tambemAluno = document.getElementById('pe-tambem-aluno')?.checked || false;
   const turmaAluno = tambemAluno ? (document.getElementById('pe-turma-aluno')?.value || null) : null;
-  if (!nome) { toast('Preencha o nome','er'); return; }
-  if (!editId && login && !senha) { toast('Digite uma senha para o login','er'); return; }
-  const email = document.getElementById('pe-email')?.value?.trim()||null;
-  const endereco = document.getElementById('pe-endereco')?.value?.trim()||null;
-  const dado = { nome, turma, nasc, tel, email, endereco, tambem_aluno: tambemAluno, turma_aluno: turmaAluno, ...(login?{login}:{}), ...(senha?{senha}:{}) };
-  if (editId) await sbUpdate('professores', editId, dado);
-  else await sbInsert('professores', { ...dado });
-  fecharModal('mo-prof'); renderProfessores();
-  toast(editId?'Professor atualizado!':'Professor cadastrado!','ok');
+  if (!editId && login && !senha) { toast('Digite uma senha para o login', 'er'); return; }
+  const dado = { nome, turma };
+  if (nasc) dado.nasc = nasc;
+  if (tel) dado.tel = tel;
+  if (email) dado.email = email;
+  if (endereco) dado.endereco = endereco;
+  if (login) dado.login = login;
+  if (senha) dado.senha = senha;
+  dado.tambem_aluno = tambemAluno;
+  if (turmaAluno) dado.turma_aluno = turmaAluno;
+  try {
+    let result;
+    if (editId) result = await sbUpdate('professores', editId, dado);
+    else result = await sbInsert('professores', dado);
+    if (result === null) return;
+    fecharModal('mo-prof');
+    toast(editId ? 'Professor atualizado! ✦' : 'Professor cadastrado! ✦', 'ok');
+    await renderProfessores();
+  } catch(e) {
+    toast('Erro ao salvar: ' + e.message, 'er');
+  }
 }
 function editProf(id) { abrirModalProf(id); }
 
@@ -3477,8 +3506,15 @@ window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferr
 // COUNTDOWN — próxima segunda-feira às 19h (EBD)
 // ══════════════════════════════════════════════
 function renderCountdown() {
-  const box = document.getElementById('dash-countdown');
-  if (!box) return;
+  let box = document.getElementById('dash-countdown');
+  if (!box) {
+    // Create it dynamically if missing
+    const main = document.getElementById('main-content');
+    if (!main) return;
+    box = document.createElement('div');
+    box.id = 'dash-countdown';
+    main.prepend(box);
+  }
   const agora = new Date();
   const diaSemana = agora.getDay(); // 0=Dom, 1=Seg
   // Dias até a próxima segunda (1)
