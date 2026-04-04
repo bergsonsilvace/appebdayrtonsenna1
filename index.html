@@ -843,6 +843,7 @@ input,select,textarea{font-family:'Outfit',sans-serif}
         <button class="btn btn-ou" onclick="editarAulaAtual()">✎ Editar</button>
         <button class="btn btn-ou" onclick="window.print()">🖨 Imprimir / PDF</button>
         <button class="share-btn" onclick="compartilharRelatorio(aulaAtualId)" style="padding:9px 14px;font-size:12px;border-radius:var(--rsm);width:auto">📲 WhatsApp</button>
+        <button class="btn btn-red btn-sm" onclick="excluirAulaAtual()" style="margin-left:auto">🗑 Excluir aula</button>
       </div>
     </div>
 
@@ -2314,14 +2315,14 @@ async function salvarAula() {
   const totalAssistencia=presentesM.length+freqVisitantes.length;
   const dado={
     data, turma:curTurmaFreq, presencas:freqPresencas, visitantes:freqVisitantes,
-    total_alunos:alunos.length, presentes_matric:presentesM.length,
-    ausentes_matric:alunos.length-presentesM.length, total_assistencia:totalAssistencia,
+    presentes_matric:presentesM.length,
+    ausentes_matric:alunos.length-presentesM.length,
+    total_assistencia:totalAssistencia,
     biblias:parseInt(document.getElementById('f-biblias').value)||0,
     revistas:parseInt(document.getElementById('f-revistas').value)||0,
     ofertas:parseFloat(document.getElementById('f-ofertas').value)||0,
     obs:document.getElementById('f-obs').value.trim(),
     licao:document.getElementById('f-licao').value.trim(),
-    professor:USER.nome,
   };
   let result;
   if (aulaAtualId) result = await sbUpdate('aulas', aulaAtualId, dado);
@@ -2343,7 +2344,7 @@ function mostrarRelatorio(aulaId) {
   const vis=aula.visitantes||[];
   document.getElementById('rel-grid').innerHTML=`
     <div class="rc dest"><div class="rv">${aula.total_assistencia}</div><div class="rl">Total de Assistência</div></div>
-    <div class="rc"><div class="rv">${aula.total_alunos}</div><div class="rl">Alunos Matriculados</div></div>
+    <div class="rc"><div class="rv">${aula.presentes_matric + aula.ausentes_matric}</div><div class="rl">Alunos Matriculados</div></div>
     <div class="rc"><div class="rv">${aula.presentes_matric}</div><div class="rl">Presentes Matr.</div></div>
     <div class="rc"><div class="rv">${aula.ausentes_matric}</div><div class="rl">Ausentes Matr.</div></div>
     <div class="rc"><div class="rv">${vis.length}</div><div class="rl">Visitantes</div></div>
@@ -2368,6 +2369,43 @@ function mostrarRelatorio(aulaId) {
   `;
   _navTo('relatorio');
 }
+
+async function excluirAulaHistorico(id) {
+  const aula = cacheAulas.find(a => a.id === id);
+  const dt = aula ? new Date(aula.data+'T12:00:00').toLocaleDateString('pt-BR') : '';
+  const turma = aula ? TN[aula.turma] : '';
+  showConfirm(
+    'Excluir aula?',
+    `Aula de ${turma} em ${dt} será removida permanentemente.`,
+    async () => {
+      await sbDelete('aulas', id);
+      await registrarAuditoria('DELETE_AULA', `Aula ${id} excluída por ${USER?.nome}`);
+      cacheAulas = await sbGet('aulas', {}, 'data', false);
+      renderHist();
+      renderDash();
+      toast('Aula excluída!', 'ok');
+    },
+    'red'
+  );
+}
+
+async function excluirAulaAtual() {
+  if (!aulaAtualId) { toast('Nenhuma aula selecionada', 'er'); return; }
+  showConfirm(
+    'Excluir esta aula?',
+    'Todos os dados de presença, visitantes e relatório desta aula serão removidos permanentemente.',
+    async () => {
+      await sbDelete('aulas', aulaAtualId);
+      await registrarAuditoria('DELETE_AULA', `Aula ${aulaAtualId} excluída por ${USER?.nome}`);
+      cacheAulas = await sbGet('aulas', {}, 'data', false);
+      aulaAtualId = null;
+      toast('Aula excluída com sucesso!', 'ok');
+      navTo('historico');
+    },
+    'red'
+  );
+}
+
 function editarAulaAtual() {
   if (!aulaAtualId) return;
   const aula=cacheAulas.find(a=>a.id===aulaAtualId); if(!aula)return;
@@ -2389,7 +2427,8 @@ function renderHist() {
   const box=document.getElementById('lista-hist');
   if (!aulas.length) { box.innerHTML='<div class="empty"><div class="empty-icon">📋</div><div class="empty-txt">Nenhuma aula encontrada</div></div>'; return; }
   box.innerHTML=aulas.map(a=>{ const dt=new Date(a.data+'T12:00:00'); const vis=a.visitantes||[];
-    return `<div class="hist-item" onclick="mostrarRelatorio('${a.id}')">
+    return `<div class="hist-item" style="position:relative" onclick="mostrarRelatorio('${a.id}')">
+      ${USER?.perfil === 'super' || USER?.perfil === 'professor' ? `<button class="btn-ic danger" style="position:absolute;top:8px;right:8px;z-index:2" onclick="event.stopPropagation();excluirAulaHistorico('${a.id}')" title="Excluir aula">🗑</button>` : ''}
       <div class="hist-d"><div class="hist-day">${dt.getDate().toString().padStart(2,'0')}</div><div class="hist-mo">${dt.toLocaleDateString('pt-BR',{month:'short'})}</div></div>
       <div class="hist-b">
         <div class="hist-trm">${TN[a.turma]}${a.professor?' · '+a.professor:''}</div>
