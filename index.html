@@ -3346,10 +3346,12 @@ function abrirModalProva(id) {
 }
 
 function atualizarLicoesModal(editId) {
-  const turma = document.getElementById('pv-turma').value;
+  const turmaEl = document.getElementById('pv-turma');
+  if (!turmaEl) return; // modal não está aberto
+  const turma = turmaEl.value;
   const dados = LICOES[turma];
   const box = document.getElementById('pv-licoes-check');
-  if (!dados) { box.innerHTML = ''; return; }
+  if (!dados || !box) return;
   const pSelecionadas = editId ? (PROVAS.find(x=>x.id===editId)?.licoes_selecionadas || []) : [];
   box.innerHTML = dados.licoes.map(l => {
     const checked = pSelecionadas.includes(l.num);
@@ -3380,7 +3382,9 @@ function onLicaoCheck(chk, num) {
 }
 
 function atualizarResumoProva() {
-  const turma = document.getElementById('pv-turma')?.value;
+  const turmaEl = document.getElementById('pv-turma');
+  if (!turmaEl) return; // modal não está aberto
+  const turma = turmaEl.value;
   const dados = LICOES[turma];
   const resumo = document.getElementById('pv-resumo');
   if (!resumo) return;
@@ -5470,7 +5474,6 @@ function gestorRenderQuestoes() {
 }
 
 function gestorEditarQuestao(idx) {
-  // Fechar outros forms abertos
   document.querySelectorAll('.questao-form').forEach(f => f.remove());
   document.querySelectorAll('.questao-card').forEach(c => c.classList.remove('editando'));
 
@@ -5482,21 +5485,28 @@ function gestorEditarQuestao(idx) {
   const form = document.createElement('div');
   form.className = 'questao-form';
   form.id = 'qform-'+idx;
-  form.innerHTML = `
-    <div class="questao-form-titulo">✎ Editando Questão ${idx+1}</div>
-    <label class="questao-form-label">Enunciado da questão</label>
-    <textarea id="qf-enunciado-${idx}" rows="3" placeholder="Digite o enunciado...">${escHtml(p.q)}</textarea>
-    <label class="questao-form-label">Opções de resposta</label>
-    <div class="questao-form-hint">✓ A primeira opção é sempre a correta</div>
-    ${(p.op||[]).map((op, j) => `
-      <input id="qf-op-${idx}-${j}" value="${escHtml(op)}"
-        placeholder="Opção ${j+1}${j===0?' (correta)':''}"
-        class="${j===0?'questao-form-correta':''}">`).join('')}
-    ${(p.op||[]).length < 4 ? `<input id="qf-op-${idx}-${(p.op||[]).length}" placeholder="+ Nova opção (opcional)">` : ''}
-    <div style="display:flex;gap:8px;margin-top:4px">
-      <button class="btn btn-gold btn-sm" onclick="gestorSalvarEdicao(${idx})">✓ Salvar</button>
-      <button class="btn btn-ou btn-sm" onclick="gestorCancelarEdicao(${idx})">Cancelar</button>
-    </div>`;
+
+  // Build ops HTML usando string concat (evita template literal aninhado)
+  let opsHtml = '';
+  (p.op||[]).forEach((op, j) => {
+    opsHtml += '<input id="qf-op-'+idx+'-'+j+'" value="'+escHtml(op)+'"'
+      + ' placeholder="Op&ccedil;&atilde;o '+(j+1)+(j===0?' (correta)':'')+'"'
+      + (j===0?' class="questao-form-correta"':'')+'>';
+  });
+  if ((p.op||[]).length < 4) {
+    opsHtml += '<input id="qf-op-'+idx+'-'+(p.op||[]).length+'" placeholder="+ Nova op&ccedil;&atilde;o (opcional)">';
+  }
+
+  form.innerHTML = '<div class="questao-form-titulo">&#x270E; Editando Quest&atilde;o '+(idx+1)+'</div>'
+    + '<label class="questao-form-label">Enunciado da quest&atilde;o</label>'
+    + '<textarea id="qf-enunciado-'+idx+'" rows="3" placeholder="Digite o enunciado...">'+escHtml(p.q)+'</textarea>'
+    + '<label class="questao-form-label">Op&ccedil;&otilde;es de resposta</label>'
+    + '<div class="questao-form-hint">&#x2713; A primeira op&ccedil;&atilde;o &eacute; sempre a correta</div>'
+    + opsHtml
+    + '<div style="display:flex;gap:8px;margin-top:4px">'
+    + '<button class="btn btn-gold btn-sm" onclick="gestorSalvarEdicao('+idx+')">&#x2713; Salvar</button>'
+    + '<button class="btn btn-ou btn-sm" onclick="gestorCancelarEdicao('+idx+')">Cancelar</button>'
+    + '</div>';
 
   card.after(form);
   document.getElementById('qf-enunciado-'+idx)?.focus();
