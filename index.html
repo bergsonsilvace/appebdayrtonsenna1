@@ -664,6 +664,26 @@ input,select,textarea{font-family:'Outfit',sans-serif}
 .turma-check-label{display:flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid var(--cb);border-radius:8px;cursor:pointer;transition:all .15s;font-size:13px}
 .turma-check-label:hover{border-color:var(--gold);background:var(--gold-pale)}
 .turma-check-label input:checked ~ *{color:var(--gold-deep);font-weight:600}
+
+/* GERENCIADOR DE QUESTÕES */
+.questao-card{border:1.5px solid var(--cb);border-radius:var(--r);padding:14px;margin-bottom:10px;background:white;transition:all .2s;position:relative}
+.questao-card:hover{border-color:var(--gold-l)}
+.questao-card.editando{border-color:var(--gold);background:var(--gold-pale)}
+.questao-card-head{display:flex;align-items:flex-start;gap:10px;margin-bottom:8px}
+.questao-card-num{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--gold-deep);font-weight:700;flex-shrink:0;padding-top:2px}
+.questao-card-txt{flex:1;font-size:14px;font-weight:500;line-height:1.5;color:var(--ink)}
+.questao-card-acts{display:flex;gap:4px;flex-shrink:0}
+.questao-card-ops{display:flex;flex-direction:column;gap:4px;margin-top:8px;margin-left:28px}
+.questao-card-op{font-size:12px;color:var(--ink-soft);padding:4px 9px;border-radius:5px;background:var(--cream);line-height:1.4}
+.questao-card-op.correta{background:var(--tc-bg);color:var(--tc);font-weight:700}
+/* FORM INLINE DE QUESTÃO */
+.questao-form{border:1.5px solid var(--gold);border-radius:var(--r);padding:14px;margin-bottom:10px;background:var(--gold-pale)}
+.questao-form-titulo{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--gold-deep);font-weight:700;margin-bottom:10px}
+.questao-form-label{font-size:11px;color:var(--ink-soft);font-weight:600;margin-bottom:3px;display:block}
+.questao-form textarea,.questao-form input{width:100%;padding:9px 11px;border:1.5px solid var(--cb);border-radius:var(--rsm);font-size:13px;font-family:'Outfit',sans-serif;background:white;resize:vertical;box-sizing:border-box;margin-bottom:8px}
+.questao-form textarea:focus,.questao-form input:focus{border-color:var(--gold);outline:none}
+.questao-form-correta{border-color:var(--tc)!important;background:var(--tc-bg)!important}
+.questao-form-hint{font-size:10px;color:var(--tc);margin-bottom:6px;font-weight:600}
 @media print{.topbar,.ttabs,.btn,.fi-btns,.ai-acts,.hero-btn,.filtros,.logout-btn,.visit-add,.fi-remove,.unsaved-banner,.mural-section{display:none!important}body{background:white!important}.card{box-shadow:none!important}}
 </style>
 </head>
@@ -1594,10 +1614,40 @@ async function finalizarLogin() {
   const uid = USER.id;
   const { data: p } = await sbClient.from('perfis').select('*').eq('usuario_id', uid).single();
   PERFIL = p || { usuario_id: uid, usuario_tipo: USER.perfil };
-  // Atualizar ultimo_acesso
-  await sbClient.from('perfis').upsert({ ...PERFIL, ultimo_acesso: new Date().toISOString() }, { onConflict: 'usuario_id' });
+  // Mostrar app imediatamente
   mostrarTela('app');
+  // Definir saudação e nome IMEDIATAMENTE após mostrar a tela
+  definirSaudacaoImediata();
+  // Atualizar perfil em background
+  sbClient.from('perfis').upsert({ ...PERFIL, ultimo_acesso: new Date().toISOString() }, { onConflict: 'usuario_id' }).catch(()=>{});
   await iniciarApp();
+}
+
+function definirSaudacaoImediata() {
+  if (!USER) return;
+  const nomeExib = PERFIL?.nome_exibicao || USER.nome?.split(' ')[0] || 'Bem-vindo';
+  const hora = new Date().getHours();
+  const saud = hora < 12 ? 'Bom dia' : hora < 18 ? 'Boa tarde' : 'Boa noite';
+  // Saudação no dashboard
+  const saudEl = document.getElementById('dash-saudacao');
+  if (saudEl) saudEl.textContent = `${saud}, ${nomeExib}! ✦`;
+  // Nome na topbar
+  const tbUname = document.getElementById('tb-uname');
+  if (tbUname) tbUname.textContent = nomeExib;
+  // Role na topbar
+  const turmasProf = USER.turmas || [USER.turma];
+  const turmasLabel = USER.turma === 'todas' ? 'Todas as turmas' : turmasProf.map(t => TN[t]||t).join(' & ');
+  const roleMap = { 
+    super: '✦ Superintendente', 
+    professor: `Professor — ${turmasLabel}`, 
+    aluno: `Aluno — ${TN[USER.turma]||''}` 
+  };
+  const tbUrole = document.getElementById('tb-urole');
+  if (tbUrole) tbUrole.textContent = roleMap[USER.perfil] || USER.perfil;
+  // Avatar
+  atualizarAvatarTopbar();
+  // Countdown imediato
+  iniciarCountdown();
 }
 
 // ── DRAWER MOBILE ──
@@ -1639,12 +1689,8 @@ function doLogout() {
 
 // ── INIT APP ──
 async function iniciarApp() {
-  // Topbar
-  const nomeExib = PERFIL?.nome_exibicao || USER.nome.split(' ')[0];
-  document.getElementById('tb-uname').textContent = nomeExib;
-  const roleLabel = USER.perfil === 'super' ? 'Superintendente' : USER.perfil === 'aluno' ? `Aluno — ${TN[USER.turma]||''}` : 'Professor';
-  document.getElementById('tb-urole').textContent = roleLabel;
-  atualizarAvatarTopbar();
+  // Topbar — atualiza caso PERFIL tenha nome_exibicao customizado
+  definirSaudacaoImediata();
 
   // Nav — aluno vê só Lições e Perfil
   const items = [];
@@ -1739,6 +1785,7 @@ async function iniciarApp() {
     await carregarConfigs();
     // Definir turma do aluno
     curTurmaLicoes = USER.turma || 'criancas';
+    definirSaudacaoImediata();
     renderAlunoProgresso();
     _navTo('pg-aluno');
     return;
@@ -1859,11 +1906,8 @@ async function renderDash() {
   document.getElementById('ds-jov').textContent = alunos.filter(a => a.turma==='jovens'&&(a.status||'ativo')==='ativo').length + ' ativos';
   document.getElementById('ds-adu').textContent = alunos.filter(a => a.turma==='adultos'&&(a.status||'ativo')==='ativo').length + ' ativos';
 
-  const nomeExib = PERFIL?.nome_exibicao || USER.nome.split(' ')[0];
-  const primeiroNome = nomeExib || USER.nome.split(' ')[0] || 'Olá';
-  const hora = new Date().getHours();
-  const saud = hora < 12 ? 'Bom dia' : hora < 18 ? 'Boa tarde' : 'Boa noite';
-  document.getElementById('dash-saudacao').textContent = `${saud}, ${primeiroNome}! ✦`;
+  // Atualizar saudação (garante que está sempre correto)
+  definirSaudacaoImediata();
   const turmasProf = USER.turmas || [USER.turma];
   const turmasLabel = USER.turma === 'todas' ? 'Todas as turmas' : turmasProf.map(t => TN[t]||t).join(' & ');
   const roleMap = { super:'✦ Superintendente', professor:`Professor — ${turmasLabel}`, aluno:`Aluno — ${TN[USER.turma]||''}` };
@@ -5333,14 +5377,25 @@ function injetarTutorialOverlay() {
 // ══════════════════════════════════════════════
 // VER QUESTÕES DA LIÇÃO (modal)
 // ══════════════════════════════════════════════
+// ══════════════════════════════════════════════
+// GERENCIADOR DE QUESTÕES DA LIÇÃO
+// ══════════════════════════════════════════════
+let _gestorTurma = null;
+let _gestorLicao = null;
+let _gestorPerguntasTemp = []; // cópia editável das perguntas
+let _alteracoesFeitas = false;
+
 function verQuestoesLicao(turma, numLicao) {
   const dados = LICOES[turma];
   if (!dados) return;
   const lic = dados.licoes.find(l => l.num === numLicao);
   if (!lic) return;
-  const nQ = (lic.perguntas||[]).length;
 
-  // Remove modal anterior se existir
+  _gestorTurma = turma;
+  _gestorLicao = numLicao;
+  _gestorPerguntasTemp = JSON.parse(JSON.stringify(lic.perguntas || []));
+  _alteracoesFeitas = false;
+
   const prev = document.getElementById('modal-questoes-licao');
   if (prev) prev.remove();
 
@@ -5348,45 +5403,252 @@ function verQuestoesLicao(turma, numLicao) {
   modal.id = 'modal-questoes-licao';
   modal.style.cssText = 'position:fixed;inset:0;z-index:600;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(0,0,0,.6);backdrop-filter:blur(3px);animation:fadeIn .2s';
   modal.innerHTML = `
-    <div style="background:white;border-radius:var(--rlg);width:100%;max-width:480px;max-height:88vh;display:flex;flex-direction:column;overflow:hidden;animation:slideUp .3s cubic-bezier(.34,1.56,.64,1)">
+    <div style="background:white;border-radius:var(--rlg);width:100%;max-width:520px;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;animation:slideUp .3s cubic-bezier(.34,1.56,.64,1)">
       <!-- Header -->
       <div style="background:var(--ink);padding:16px 18px;flex-shrink:0;border-bottom:2px solid var(--gold)">
         <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
-          <div>
+          <div style="flex:1;min-width:0">
             <div style="font-size:10px;text-transform:uppercase;letter-spacing:.09em;color:var(--gold-l);font-weight:600;margin-bottom:4px">
               L${lic.num} · ${TN[turma]} · ${lic.data}
             </div>
             <div style="font-family:'Cormorant Garamond',serif;font-size:18px;color:white;font-weight:600;line-height:1.3">${lic.titulo}</div>
-            <div style="font-size:12px;color:rgba(255,255,255,.4);margin-top:4px">${nQ} questão${nQ!==1?'es':''} · ${lic.texto||''}</div>
+            <div style="font-size:12px;color:rgba(255,255,255,.4);margin-top:3px" id="gest-header-count">${_gestorPerguntasTemp.length} questão${_gestorPerguntasTemp.length!==1?'es':''} · ${lic.texto||''}</div>
           </div>
-          <button onclick="document.getElementById('modal-questoes-licao').remove()"
+          <button onclick="fecharGestorQuestoes()"
             style="width:30px;height:30px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);border-radius:6px;color:rgba(255,255,255,.6);font-size:16px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center">✕</button>
         </div>
       </div>
       <!-- Body -->
-      <div style="flex:1;overflow-y:auto;padding:16px 18px">
-        ${nQ === 0
-          ? '<div style="text-align:center;padding:24px 0;color:var(--ink-soft)">Nenhuma questão cadastrada nesta lição</div>'
-          : lic.perguntas.map((p, i) => `
-            <div class="questao-item">
-              <div class="questao-num">Questão ${i+1} de ${nQ}</div>
-              <div class="questao-texto">${p.q}</div>
-              <div class="questao-ops">
-                ${p.op.map(op => `<div class="questao-op ${op===p.a?'correta':''}">${op===p.a?'✓ ':''} ${op}</div>`).join('')}
-              </div>
-            </div>`).join('')
-        }
-      </div>
+      <div style="flex:1;overflow-y:auto;padding:14px 16px" id="gest-body"></div>
       <!-- Footer -->
-      <div style="padding:12px 18px;border-top:1px solid var(--cb);display:flex;justify-content:space-between;align-items:center;flex-shrink:0">
-        <div style="font-size:12px;color:var(--ink-soft)">✓ = resposta correta</div>
-        <button onclick="document.getElementById('modal-questoes-licao').remove()"
-          class="btn btn-dk btn-sm">Fechar</button>
+      <div style="padding:12px 16px;border-top:1px solid var(--cb);display:flex;gap:8px;flex-shrink:0;flex-wrap:wrap">
+        <button class="btn btn-ou btn-sm" onclick="gestorAdicionarQuestao()" style="flex-shrink:0">+ Nova questão</button>
+        <div style="flex:1"></div>
+        <button class="btn btn-ou btn-sm" onclick="fecharGestorQuestoes()">Cancelar</button>
+        <button class="btn btn-gold btn-sm" id="btn-salvar-gestao" onclick="gestorSalvarAlteracoes()">✓ Salvar alterações</button>
       </div>
     </div>`;
 
-  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  modal.addEventListener('click', e => { if (e.target === modal) fecharGestorQuestoes(); });
   document.body.appendChild(modal);
+  gestorRenderQuestoes();
+}
+
+function gestorRenderQuestoes() {
+  const body = document.getElementById('gest-body');
+  if (!body) return;
+  const perguntas = _gestorPerguntasTemp;
+
+  // Atualiza contador no header
+  const hCount = document.getElementById('gest-header-count');
+  const lic = LICOES[_gestorTurma]?.licoes.find(l => l.num === _gestorLicao);
+  if (hCount) hCount.textContent = `${perguntas.length} questão${perguntas.length!==1?'es':''} · ${lic?.texto||''}`;
+
+  if (!perguntas.length) {
+    body.innerHTML = `<div style="text-align:center;padding:28px 0">
+      <div style="font-size:36px;margin-bottom:10px">📝</div>
+      <div style="color:var(--ink-soft);font-size:14px;margin-bottom:16px">Nenhuma questão nesta lição ainda</div>
+      <button class="btn btn-gold btn-sm" onclick="gestorAdicionarQuestao()">+ Adicionar primeira questão</button>
+    </div>`;
+    return;
+  }
+
+  body.innerHTML = perguntas.map((p, i) => `
+    <div class="questao-card" id="qcard-${i}">
+      <div class="questao-card-head">
+        <div class="questao-card-num">Q${i+1}</div>
+        <div class="questao-card-txt">${p.q}</div>
+        <div class="questao-card-acts">
+          <button class="btn-ic" onclick="gestorEditarQuestao(${i})" title="Editar">✎</button>
+          <button class="btn-ic danger" onclick="gestorRemoverQuestao(${i})" title="Remover">✕</button>
+        </div>
+      </div>
+      <div class="questao-card-ops">
+        ${(p.op||[]).map(op => `<div class="questao-card-op ${op===p.a?'correta':''}">${op===p.a?'✓ ':''}${op}</div>`).join('')}
+      </div>
+    </div>`).join('');
+}
+
+function gestorEditarQuestao(idx) {
+  // Fechar outros forms abertos
+  document.querySelectorAll('.questao-form').forEach(f => f.remove());
+  document.querySelectorAll('.questao-card').forEach(c => c.classList.remove('editando'));
+
+  const card = document.getElementById('qcard-'+idx);
+  if (!card) return;
+  card.classList.add('editando');
+
+  const p = _gestorPerguntasTemp[idx];
+  const form = document.createElement('div');
+  form.className = 'questao-form';
+  form.id = 'qform-'+idx;
+  form.innerHTML = `
+    <div class="questao-form-titulo">✎ Editando Questão ${idx+1}</div>
+    <label class="questao-form-label">Enunciado da questão</label>
+    <textarea id="qf-enunciado-${idx}" rows="3" placeholder="Digite o enunciado...">${escHtml(p.q)}</textarea>
+    <label class="questao-form-label">Opções de resposta</label>
+    <div class="questao-form-hint">✓ A primeira opção é sempre a correta</div>
+    ${(p.op||[]).map((op, j) => `
+      <input id="qf-op-${idx}-${j}" value="${escHtml(op)}"
+        placeholder="Opção ${j+1}${j===0?' (correta)':''}"
+        class="${j===0?'questao-form-correta':''}">`).join('')}
+    ${(p.op||[]).length < 4 ? `<input id="qf-op-${idx}-${(p.op||[]).length}" placeholder="+ Nova opção (opcional)">` : ''}
+    <div style="display:flex;gap:8px;margin-top:4px">
+      <button class="btn btn-gold btn-sm" onclick="gestorSalvarEdicao(${idx})">✓ Salvar</button>
+      <button class="btn btn-ou btn-sm" onclick="gestorCancelarEdicao(${idx})">Cancelar</button>
+    </div>`;
+
+  card.after(form);
+  document.getElementById('qf-enunciado-'+idx)?.focus();
+}
+
+function gestorSalvarEdicao(idx) {
+  const enunciado = document.getElementById('qf-enunciado-'+idx)?.value?.trim();
+  if (!enunciado) { toast('Digite o enunciado', 'er'); return; }
+
+  const ops = [];
+  let j = 0;
+  while (document.getElementById('qf-op-'+idx+'-'+j)) {
+    const val = document.getElementById('qf-op-'+idx+'-'+j).value.trim();
+    if (val) ops.push(val);
+    j++;
+  }
+  if (ops.length < 2) { toast('Adicione pelo menos 2 opções', 'er'); return; }
+
+  _gestorPerguntasTemp[idx] = { q: enunciado, a: ops[0], op: ops };
+  _alteracoesFeitas = true;
+  gestorCancelarEdicao(idx);
+  gestorRenderQuestoes();
+  toast('Questão atualizada!', 'ok');
+}
+
+function gestorCancelarEdicao(idx) {
+  const form = document.getElementById('qform-'+idx);
+  if (form) form.remove();
+  const card = document.getElementById('qcard-'+idx);
+  if (card) card.classList.remove('editando');
+}
+
+function gestorRemoverQuestao(idx) {
+  showConfirm(
+    'Remover questão?',
+    `Remover a questão ${idx+1}: "${_gestorPerguntasTemp[idx]?.q?.substring(0,50)}..."?`,
+    () => {
+      _gestorPerguntasTemp.splice(idx, 1);
+      _alteracoesFeitas = true;
+      gestorRenderQuestoes();
+      toast('Questão removida!', '');
+    },
+    'red'
+  );
+}
+
+function gestorAdicionarQuestao() {
+  // Fechar forms abertos
+  document.querySelectorAll('.questao-form').forEach(f => f.remove());
+  document.querySelectorAll('.questao-card').forEach(c => c.classList.remove('editando'));
+
+  const body = document.getElementById('gest-body');
+  if (!body) return;
+
+  const novoIdx = _gestorPerguntasTemp.length;
+  const form = document.createElement('div');
+  form.className = 'questao-form';
+  form.id = 'qform-novo';
+  form.innerHTML = `
+    <div class="questao-form-titulo">+ Nova Questão ${novoIdx+1}</div>
+    <label class="questao-form-label">Enunciado da questão</label>
+    <textarea id="qf-novo-enunciado" rows="3" placeholder="Digite o enunciado da nova questão..."></textarea>
+    <label class="questao-form-label">Opções de resposta</label>
+    <div class="questao-form-hint">✓ A primeira opção é sempre a correta</div>
+    <input id="qf-novo-op-0" placeholder="Opção A — correta" class="questao-form-correta">
+    <input id="qf-novo-op-1" placeholder="Opção B">
+    <input id="qf-novo-op-2" placeholder="Opção C">
+    <input id="qf-novo-op-3" placeholder="Opção D">
+    <div style="display:flex;gap:8px;margin-top:4px">
+      <button class="btn btn-gold btn-sm" onclick="gestorConfirmarNova()">✓ Adicionar</button>
+      <button class="btn btn-ou btn-sm" onclick="document.getElementById('qform-novo')?.remove()">Cancelar</button>
+    </div>`;
+
+  body.appendChild(form);
+  form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  document.getElementById('qf-novo-enunciado')?.focus();
+}
+
+function gestorConfirmarNova() {
+  const enunciado = document.getElementById('qf-novo-enunciado')?.value?.trim();
+  if (!enunciado) { toast('Digite o enunciado', 'er'); return; }
+
+  const ops = [];
+  for (let j = 0; j <= 3; j++) {
+    const val = document.getElementById('qf-novo-op-'+j)?.value?.trim();
+    if (val) ops.push(val);
+  }
+  if (ops.length < 2) { toast('Adicione pelo menos 2 opções', 'er'); return; }
+
+  _gestorPerguntasTemp.push({ q: enunciado, a: ops[0], op: ops });
+  _alteracoesFeitas = true;
+  document.getElementById('qform-novo')?.remove();
+  gestorRenderQuestoes();
+  toast('Questão adicionada!', 'ok');
+
+  // Scroll para o fim
+  const body = document.getElementById('gest-body');
+  if (body) body.scrollTop = body.scrollHeight;
+}
+
+function gestorSalvarAlteracoes() {
+  if (!_gestorTurma || _gestorLicao === null) return;
+
+  // Fechar qualquer form aberto antes de salvar
+  const formAberto = document.querySelector('.questao-form');
+  if (formAberto) {
+    toast('Salve ou cancele a edição em andamento primeiro', 'er');
+    formAberto.scrollIntoView({ behavior:'smooth', block:'center' });
+    return;
+  }
+
+  // Salvar no LICOES (memória)
+  const dados = LICOES[_gestorTurma];
+  const licIdx = dados?.licoes.findIndex(l => l.num === _gestorLicao);
+  if (licIdx >= 0) {
+    dados.licoes[licIdx].perguntas = JSON.parse(JSON.stringify(_gestorPerguntasTemp));
+  }
+
+  _alteracoesFeitas = false;
+
+  // Atualizar badge na tela de criação de prova
+  atualizarLicoesModal();
+  atualizarResumoProva();
+
+  // Atualizar o card da lição no modal da prova (badge de quantidade)
+  const card = document.getElementById('lic-card-'+_gestorLicao);
+  if (card) {
+    const badge = card.querySelector('.lic-check-badge');
+    const nQ = _gestorPerguntasTemp.length;
+    if (badge) badge.textContent = `${nQ} questão${nQ!==1?'es':''}`;
+  }
+
+  toast(`Questões salvas! ${_gestorPerguntasTemp.length} questão${_gestorPerguntasTemp.length!==1?'es':''} na Lição ${_gestorLicao}`, 'ok');
+  document.getElementById('modal-questoes-licao')?.remove();
+}
+
+function fecharGestorQuestoes() {
+  if (_alteracoesFeitas) {
+    showConfirm(
+      'Descartar alterações?',
+      'Você tem alterações não salvas. Deseja fechar sem salvar?',
+      () => document.getElementById('modal-questoes-licao')?.remove(),
+      'red'
+    );
+  } else {
+    document.getElementById('modal-questoes-licao')?.remove();
+  }
+}
+
+function escHtml(str) {
+  if (!str) return '';
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 
